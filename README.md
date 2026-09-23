@@ -1,10 +1,10 @@
-# realness-examples
+# brayness-examples
 
 One folder per example. Each is a complete npm package that runs on its own.
 Take one with:
 
 ```sh
-npx giget gh:scott-fryxell/realness-examples/<name> <name>
+npx giget gh:scott-fryxell/brayness-examples/<name> <name>
 cd <name> && npm install && npm run dev
 ```
 
