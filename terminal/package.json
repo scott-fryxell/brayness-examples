@@ -1,0 +1,16 @@
+{
+  "name": "terminal",
+  "private": true,
+  "type": "module",
+  "description": "A terminal in the browser: libghostty-vt as WASM, drawn on a canvas",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node test/smoke.js && node test/smoke.js test/capture/pi.tui && node test/keys.js && node test/selection.js && node test/theme.js",
+    "build:wasm": "sh build-wasm.sh"
+  },
+  "devDependencies": {
+    "vite": "^8.3.0"
+  }
+}
