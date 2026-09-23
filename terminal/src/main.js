@@ -109,6 +109,9 @@ function send_resize() {
 ws.onopen = () => {
   connected = true
   send_resize()
+  // ?exec=<command> replaces the shell with it, so its exit lands in the shell.
+  const command = new URLSearchParams(location.search).get("exec")
+  if (command) send(new TextEncoder().encode(`exec ${command}\r`))
 }
 
 ws.onmessage = (event) => {
