@@ -110,8 +110,14 @@ ws.onopen = () => {
   connected = true
   send_resize()
   // ?exec=<command> replaces the shell with it, so its exit lands in the shell.
-  const command = new URLSearchParams(location.search).get("exec")
-  if (command) send(new TextEncoder().encode(`exec ${command}\r`))
+  // Old links may include --continue; refresh always starts a new conversation.
+  const command = new URLSearchParams(location.search).get("exec")?.replace(/ --continue$/, "")
+  if (command) {
+    const url = new URL(location.href)
+    url.searchParams.set("exec", command)
+    history.replaceState(null, "", url)
+    send(new TextEncoder().encode(`exec ${command}\r`))
+  }
 }
 
 ws.onmessage = (event) => {

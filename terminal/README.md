@@ -14,7 +14,9 @@ npm run build   # dist/, relative URLs, serve it under any path
 
 In dev, `bridge.py` runs the command in a pty and Vite proxies `/pty` to it.
 Hosted, the Brayness orchestrator serves `dist/` and its own `/pty`, and
-`?session=<id>` picks the session. Both speak the same JSON frames.
+`?session=<id>` picks the hosted session. Each connection starts a new Pi
+conversation in that session. `/remember <words>` searches saved conversations;
+refresh does not send them all to the model. Both speak the same JSON frames.
 
 `public/ghostty-vt.wasm` is committed. `npm run build:wasm` rebuilds it from the
 pinned Ghostty commit and Zig version (Apple silicon only).
