@@ -13,3 +13,11 @@ cd <name> && npm install && npm run dev
 | `terminal` | A terminal in the browser: libghostty-vt as WASM, drawn on a canvas |
 | `static` | Markdown articles as semantic HTML: partials, microdata, previews, sitemap |
 | `app` | A Vue notes app; each note is a microdata article saved by `@realness.online/store` |
+
+## Future
+
+Briefs for examples not built yet, in `future/`:
+
+| Brief | What it is |
+|-------|------------|
+| [`vacation-sf.md`](future/vacation-sf.md) | A shop for a North Beach vintage store: items, cart, checkout |
