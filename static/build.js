@@ -11,6 +11,7 @@ const STATIC = 'static'
 const PARTIALS = 'partials'
 const OUT = 'dist'
 const POLYFILL = 'node_modules/template-for-polyfill/dist/template-for-polyfill.js'
+const MERMAID = 'node_modules/mermaid/dist/mermaid.min.js'
 const DRAFTS = process.argv.includes('--drafts')
 const WATCH = process.argv.includes('--watch')
 const OG_WIDTH = 1200
@@ -85,6 +86,7 @@ function shell(title, body, meta = {}) {
   <link rel="apple-touch-icon" href="/192.png">
   <script type="module" src="/scripts/detect.js"></script>
   <script type="module" src="/scripts/reveal.js"></script>
+  <script type="module" src="/scripts/diagrams.js"></script>
   ${WATCH ? live_reload : ''}
 </head>
 <body>
@@ -166,12 +168,13 @@ function poster(data, title, heading = 'h2', href = null, options = {}) {
 const entities = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }
 const code_block = /<pre(?: language="([^"]*)")?><code[^>]*>([\s\S]*?)<\/code><\/pre>/g
 
-// comark hands us the language on the fence; shiki turns it into themed spans
+// comark hands us the language on the fence; shiki turns it into themed spans.
+// A mermaid fence stays text for scripts/diagrams.js to draw in the browser.
 async function highlight(html) {
   const blocks = [...html.matchAll(code_block)]
   if (!blocks.length) return html
   const rendered = await Promise.all(blocks.map(([, language, code]) =>
-    codeToHtml(code.replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => entities[name]), {
+    language === 'mermaid' ? `<pre class="mermaid">${code}</pre>` : codeToHtml(code.replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => entities[name]), {
       lang: language || 'text',
       themes: { light: 'one-light', dark: 'one-dark-pro' },
       defaultColor: false
@@ -212,6 +215,8 @@ function strip_tags(html) {
   return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
+const leading_h1 = /^\s*<h1[^>]*>([\s\S]*?)<\/h1>/
+
 // content/articles/2026/hello.md publishes at /blog/hello
 function article_slug(file) {
   const parts = relative(ARTICLES, file).replace(/\.md$/, '').split('/')
@@ -223,10 +228,16 @@ async function build_article(file) {
   const src = await readFile(file, 'utf8')
   const { frontmatter: data } = await parse(src)
   const slug = article_slug(file)
-  const title = title_case(data.title || slug.split('/').pop().replace(/-/g, ' '))
+  let body = await render(src)
+  // no title in the frontmatter: a leading # heading is the title
+  const heading = !data.title && body.match(leading_h1)
+  if (heading) body = body.replace(leading_h1, '')
+  const title = data.title ? title_case(data.title)
+    : heading ? strip_tags(heading[1])
+    : title_case(slug.split('/').pop().replace(/-/g, ' '))
   const draft = data.draft === true || data.draft === 'true'
   if (draft && !DRAFTS) return { slug, title, date: data.date, draft }
-  const { html, notes } = footnote(plate(await highlight(await render(src))))
+  const { html, notes } = footnote(plate(await highlight(body)))
   const article = `<article itemscope itemtype="http://schema.org/BlogPosting">
     ${poster(data, title, 'h1', null, { close_href: '/' })}
     <section itemprop="articleBody">${html}${notes}</section>
@@ -283,6 +294,7 @@ export async function build() {
   await cp(STATIC, OUT, { recursive: true })
   await cp(PARTIALS, join(OUT, PARTIALS), { recursive: true })
   await cp(POLYFILL, join(OUT, 'scripts', 'template-for-polyfill.js'))
+  await cp(MERMAID, join(OUT, 'scripts', 'mermaid.min.js'))
   await load_poster_sizes()
   const articles = await Promise.all((await walk(ARTICLES)).map(build_article))
   await build_index(articles)

@@ -459,6 +459,22 @@ section[itemprop="articleBody"] > iframe {
   margin: calc(var(--base-line) * 2) 0;
 }
 
+/* scripts/diagrams.js draws into these; wide graphs scroll sideways */
+section[itemprop="articleBody"] > pre.mermaid {
+  justify-self: stretch;
+  max-width: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  overflow-x: auto;
+  font-family: inherit;
+  white-space: normal;
+
+  & svg {
+    height: auto;
+  }
+}
+
 section[itemprop="articleBody"] > details,
 section[itemprop="articleBody"] > .inline-reveal-panel {
   grid-column: wide;
