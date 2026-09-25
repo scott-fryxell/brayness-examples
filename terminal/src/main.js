@@ -47,7 +47,7 @@ function redraw() {
     apply_selection()
     const frame = term.frame()
     draw_frame(ctx, frame, { font_size: FONT_SIZE, blink_on, selection_color: subliminal.selection_background })
-    const base = closed ? "disconnected" : connected ? "" : "connecting..."
+    const base = closed ? (exited ? "disconnected" : "reconnecting...") : connected ? "" : "connecting..."
     status.textContent = note || base
     schedule_blink(frame)
   })
@@ -90,7 +90,13 @@ const session = new URLSearchParams(location.search).get("session")
 const scheme = location.protocol === "https:" ? "wss" : "ws"
 const query = new URLSearchParams({ cols, rows })
 if (session) query.set("session", session)
-const ws = new WebSocket(`${scheme}://${location.host}${new URL("pty", document.baseURI).pathname}?${query}`)
+const pty_url = `${scheme}://${location.host}${new URL("pty", document.baseURI).pathname}`
+// A dropped socket (host restart, idled VM) reconnects; attaching wakes the
+// session. The holder ignores `exec` when Pi is running, so this is safe either way.
+const RETRY_MS = [500, 1000, 2000, 4000, 8000]
+let ws = null
+let retries = 0
+let exited = false
 
 function to_base64(bytes) {
   let binary = ""
@@ -106,8 +112,24 @@ function send_resize() {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: "resize", cols, rows }))
 }
 
-ws.onopen = () => {
+function connect() {
+  query.set("cols", cols)
+  query.set("rows", rows)
+  ws = new WebSocket(`${pty_url}?${query}`)
+  ws.onopen = on_open
+  ws.onmessage = on_message
+  ws.onclose = on_close
+}
+
+function on_open() {
+  if (retries) {
+    // A cold boot starts from a bare shell; clear the old screen first.
+    term.write(new TextEncoder().encode("\x1bc"))
+    redraw()
+  }
   connected = true
+  closed = false
+  retries = 0
   send_resize()
   // ?exec=<command> replaces the shell with it, so its exit lands in the shell.
   // Old links may include --continue; refresh always starts a new conversation.
@@ -120,9 +142,10 @@ ws.onopen = () => {
   }
 }
 
-ws.onmessage = (event) => {
+function on_message(event) {
   const message = JSON.parse(event.data)
   if (message.op === "exit") {
+    exited = true
     set_note(`exit ${message.code}`)
     ws.close()
     return
@@ -138,11 +161,19 @@ ws.onmessage = (event) => {
   redraw()
 }
 
-ws.onclose = () => {
+function on_close() {
   connected = false
   closed = true
-  status.textContent = "disconnected"
+  if (exited) {
+    status.textContent = "disconnected"
+    return
+  }
+  status.textContent = "reconnecting..."
+  setTimeout(connect, RETRY_MS[Math.min(retries, RETRY_MS.length - 1)])
+  retries += 1
 }
+
+connect()
 
 const KEY_MAP = {
   Escape: KEY.ESCAPE,
