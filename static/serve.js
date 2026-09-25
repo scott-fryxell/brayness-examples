@@ -3,7 +3,8 @@
 import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { extname, join, normalize } from 'node:path'
+import { dirname, extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const OUT = 'dist'
 const PORT = Number(process.env.PORT) || 3000
@@ -19,7 +20,7 @@ const types = {
   '.txt': 'text/plain'
 }
 
-const watcher = spawn(process.execPath, ['build.js', '--drafts', '--watch'], { stdio: 'inherit' })
+const watcher = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'build.js'), '--drafts', '--watch'], { stdio: 'inherit' })
 process.on('exit', () => watcher.kill())
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => process.exit())
 

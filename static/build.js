@@ -3,15 +3,22 @@ import { parse } from 'comark'
 import { codeToHtml } from 'shiki'
 import sharp from 'sharp'
 import { readdir, readFile, writeFile, mkdir, cp } from 'node:fs/promises'
-import { watch } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { existsSync, watch } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 
+// The engine is this folder; the site is wherever build.js runs from. Run here,
+// they are the same. Run from a site, its static/ and partials/ override ours.
+const ENGINE = dirname(fileURLToPath(import.meta.url))
+const OVERLAY = resolve(ENGINE) !== resolve('.')
 const ARTICLES = 'content/articles'
 const STATIC = 'static'
 const PARTIALS = 'partials'
+// pages/resume.html publishes at /resume; site.json pages.resume holds its meta
+const PAGES = 'pages'
 const OUT = 'dist'
-const POLYFILL = 'node_modules/template-for-polyfill/dist/template-for-polyfill.js'
+const POLYFILL = join(ENGINE, 'node_modules/template-for-polyfill/dist/template-for-polyfill.js')
 // Fetched only when a page has a diagram: the npm package unpacks to 123 MB
 // for this one 5.5 MB file. Pinned and checked, then cached.
 const MERMAID = {
@@ -69,7 +76,7 @@ function shell(title, body, meta = {}) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1">${site.head ? `\n  ${site.head}` : ''}
   <title>${full_title}</title>
   <meta name="description" content="${description}">
   <link rel="canonical" href="${canonical}">
@@ -160,7 +167,7 @@ function poster(data, title, heading = 'h2', href = null, options = {}) {
   const img_attrs = size ? ` width="${size.width}" height="${size.height}"` : ''
   const headline = href ? `<a itemprop="url" href="${href}">${title}</a>` : title
   const close = options.close_href
-    ? `<a class="back-link" href="${options.close_href}" aria-label="Back to articles">x</a>`
+    ? `<a class="back-link" href="${options.close_href}" aria-label="${site.back_label || 'Back to articles'}">x</a>`
     : ''
   return `<figure${figure_style}>
       ${data.img ? `<img src="/posters/${data.img}"${img_attrs} alt="" loading="lazy">` : ''}
@@ -273,12 +280,31 @@ async function build_index(articles) {
     shell(site.name, `<section>${items}</section>`, { root: true, url: '/', og_image_path }))
 }
 
-async function build_sitemap(articles) {
+async function build_pages() {
+  if (!existsSync(PAGES)) return []
+  const names = (await readdir(PAGES)).filter(f => f.endsWith('.html')).map(f => f.slice(0, -5))
+  const og_image_path = await raster_og_image()
+  for (const name of names) {
+    const meta = site.pages?.[name] || {}
+    const body = await readFile(join(PAGES, `${name}.html`), 'utf8')
+    await mkdir(join(OUT, name), { recursive: true })
+    await writeFile(join(OUT, name, 'index.html'), shell(meta.title || title_case(name.replace(/-/g, ' ')), body, {
+      url: `/${name}`,
+      og_image_path,
+      description: meta.description,
+      type: meta.type
+    }))
+  }
+  return names
+}
+
+async function build_sitemap(articles, pages) {
   const published = articles
     .filter(a => DRAFTS || !a.draft)
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
   const urls = [
     { loc: '/', lastmod: published[0]?.date },
+    ...pages.map(name => ({ loc: `/${name}` })),
     ...published.map(a => ({ loc: `/blog/${a.slug}`, lastmod: a.date }))
   ]
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -312,15 +338,21 @@ const sha256 = data => createHash('sha256').update(data).digest('hex')
 
 export async function build() {
   await mkdir(OUT, { recursive: true })
-  await cp(STATIC, OUT, { recursive: true })
-  await cp(PARTIALS, join(OUT, PARTIALS), { recursive: true })
+  for (const root of OVERLAY ? [ENGINE, '.'] : ['.']) {
+    const static_dir = join(root, STATIC)
+    const partials = join(root, PARTIALS)
+    // the engine's sample posters are not the site's
+    const filter = src => root === '.' || !src.startsWith(join(ENGINE, STATIC, 'posters'))
+    if (existsSync(static_dir)) await cp(static_dir, OUT, { recursive: true, filter })
+    if (existsSync(partials)) await cp(partials, join(OUT, PARTIALS), { recursive: true })
+  }
   await cp(POLYFILL, join(OUT, 'scripts', 'template-for-polyfill.js'))
   await load_poster_sizes()
   const articles = await Promise.all((await walk(ARTICLES)).map(build_article))
   if (articles.some(a => a.html?.includes('<pre class="mermaid">')))
     await cp(await mermaid_bundle(), join(OUT, 'scripts', 'mermaid.min.js'))
   await build_index(articles)
-  await build_sitemap(articles)
+  await build_sitemap(articles, await build_pages())
   if (WATCH) await writeFile(join(OUT, 'build-stamp.txt'), String(Date.now()))
   console.log(`built ${articles.length} articles`)
 }
@@ -331,9 +363,10 @@ function watch_sources() {
     clearTimeout(pending)
     pending = setTimeout(() => build().catch(error => console.error(error.message)), 50)
   }
-  for (const dir of ['content', STATIC, PARTIALS]) watch(dir, { recursive: true }, rebuild)
+  const dirs = ['content', STATIC, PARTIALS, PAGES].filter(existsSync)
+  for (const dir of dirs) watch(dir, { recursive: true }, rebuild)
   watch('site.json', rebuild)
-  console.log('watching content, static, partials, site.json')
+  console.log(`watching ${dirs.join(', ')}, site.json`)
 }
 
 await build()
