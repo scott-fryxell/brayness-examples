@@ -4,14 +4,21 @@ import { codeToHtml } from 'shiki'
 import sharp from 'sharp'
 import { readdir, readFile, writeFile, mkdir, cp } from 'node:fs/promises'
 import { watch } from 'node:fs'
-import { join, relative } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import { createHash } from 'node:crypto'
 
 const ARTICLES = 'content/articles'
 const STATIC = 'static'
 const PARTIALS = 'partials'
 const OUT = 'dist'
 const POLYFILL = 'node_modules/template-for-polyfill/dist/template-for-polyfill.js'
-const MERMAID = 'node_modules/mermaid/dist/mermaid.min.js'
+// Fetched only when a page has a diagram: the npm package unpacks to 123 MB
+// for this one 5.5 MB file. Pinned and checked, then cached.
+const MERMAID = {
+  url: 'https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js',
+  sha256: '28fca7ae6ebc7ed7bb63bde63136a74bfef14f296a57e403657eeb8b32836073',
+  cache: '.cache/mermaid-12.0.0.min.js'
+}
 const DRAFTS = process.argv.includes('--drafts')
 const WATCH = process.argv.includes('--watch')
 const OG_WIDTH = 1200
@@ -289,14 +296,29 @@ Sitemap: ${site.url}/sitemap.xml
 `)
 }
 
+async function mermaid_bundle() {
+  const cached = await readFile(MERMAID.cache).catch(() => null)
+  if (cached && sha256(cached) === MERMAID.sha256) return MERMAID.cache
+  const response = await fetch(MERMAID.url)
+  if (!response.ok) throw new Error(`mermaid: ${response.status} from ${MERMAID.url}`)
+  const body = Buffer.from(await response.arrayBuffer())
+  if (sha256(body) !== MERMAID.sha256) throw new Error(`mermaid: checksum mismatch for ${MERMAID.url}`)
+  await mkdir(dirname(MERMAID.cache), { recursive: true })
+  await writeFile(MERMAID.cache, body)
+  return MERMAID.cache
+}
+
+const sha256 = data => createHash('sha256').update(data).digest('hex')
+
 export async function build() {
   await mkdir(OUT, { recursive: true })
   await cp(STATIC, OUT, { recursive: true })
   await cp(PARTIALS, join(OUT, PARTIALS), { recursive: true })
   await cp(POLYFILL, join(OUT, 'scripts', 'template-for-polyfill.js'))
-  await cp(MERMAID, join(OUT, 'scripts', 'mermaid.min.js'))
   await load_poster_sizes()
   const articles = await Promise.all((await walk(ARTICLES)).map(build_article))
+  if (articles.some(a => a.html?.includes('<pre class="mermaid">')))
+    await cp(await mermaid_bundle(), join(OUT, 'scripts', 'mermaid.min.js'))
   await build_index(articles)
   await build_sitemap(articles)
   if (WATCH) await writeFile(join(OUT, 'build-stamp.txt'), String(Date.now()))
