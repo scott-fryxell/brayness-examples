@@ -14,6 +14,13 @@ cd <name> && npm install && npm run dev
 | `static` | Markdown articles as semantic HTML: partials, microdata, previews, sitemap |
 | `app` | A Vue notes app; each note is a microdata article saved by `@realness.online/store` |
 
+## Decisions
+
+- One folder per example in `brayness-examples`; each runs alone.
+- Sessions download with giget, and install only when asked.
+- `@realness.online/itemid` and `/store` release by tag via OIDC.
+- Pin `@comark/html` 0.4.0; 0.7 drops `render`.
+
 ## Future
 
 Briefs for examples not built yet, in `future/`:
