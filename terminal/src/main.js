@@ -86,13 +86,13 @@ function schedule_blink(frame) {
 // The wire is the orchestrator's pty protocol: JSON text frames, bytes as
 // base64. {op: "data", data_b64} both ways, {op: "resize", cols, rows} up,
 // {op: "exit", code} down.
-const session = new URLSearchParams(location.search).get("session")
+const actor = new URLSearchParams(location.search).get("actor")
 const scheme = location.protocol === "https:" ? "wss" : "ws"
 const query = new URLSearchParams({ cols, rows })
-if (session) query.set("session", session)
+if (actor) query.set("actor", actor)
 const pty_url = `${scheme}://${location.host}${new URL("pty", document.baseURI).pathname}`
 // A dropped socket (host restart, idled VM) reconnects; attaching wakes the
-// session. The holder ignores `exec` when Pi is running, so this is safe either way.
+// actor. The holder ignores `exec` when Pi is running, so this is safe either way.
 const RETRY_MS = [500, 1000, 2000, 4000, 8000]
 let ws = null
 let retries = 0
@@ -112,9 +112,18 @@ function send_resize() {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: "resize", cols, rows }))
 }
 
-function connect() {
+async function connect() {
+  const response = await fetch(`ticket?actor=${encodeURIComponent(actor)}`, { method: "POST" })
+  if (!response.ok) {
+    closed = true
+    exited = true
+    set_note("Sign in through Realness to reconnect")
+    return
+  }
+  const { ticket } = await response.json()
   query.set("cols", cols)
   query.set("rows", rows)
+  query.set("ticket", ticket)
   ws = new WebSocket(`${pty_url}?${query}`)
   ws.onopen = on_open
   ws.onmessage = on_message
